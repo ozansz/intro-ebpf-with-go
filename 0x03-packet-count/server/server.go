@@ -6,6 +6,8 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -28,6 +30,10 @@ type Server struct {
 	upgrader  websocket.Upgrader
 	clients   map[*client]bool
 	indexPage string
+
+	data      map[time.Time]any
+	dataSer   atomic.Value
+	broadcast chan any
 }
 
 type Option func(*Server)
@@ -36,13 +42,14 @@ func WithPort(port string) Option {
 	return func(s *Server) {
 		s.port = port
 	}
-
 }
 
 func New(opts ...Option) (*Server, error) {
 	s := &Server{
-		port:    defaultPort,
-		clients: make(map[*client]bool),
+		port:      defaultPort,
+		clients:   make(map[*client]bool),
+		data:      make(map[time.Time]any),
+		broadcast: make(chan any),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -66,34 +73,44 @@ func New(opts ...Option) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Start() chan<- any {
+func (s *Server) Start() {
 	http.HandleFunc("/", s.serveIndex)
+	http.HandleFunc("/json", s.serveJSON)
 	http.HandleFunc("/ws", s.handleConnections)
 
-	dataCh := make(chan any)
-	go s.handleBroadcast(dataCh)
-
+	go s.handleBroadcast()
 	go func() {
 		log.Printf("server started on :%s", s.port)
 		if err := http.ListenAndServe(":"+s.port, nil); err != nil {
 			log.Fatalf("listen http: %v", err)
 		}
 	}()
+}
 
-	return dataCh
+func (s *Server) Submit(data any) {
+	s.broadcast <- data
 }
 
 func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed: "+r.Method, http.StatusMethodNotAllowed)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html")
 	w.Write([]byte(s.indexPage))
+}
+
+func (s *Server) serveJSON(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	val := s.dataSer.Load()
+	if val == nil {
+		w.Write([]byte("{}"))
+		return
+	}
+
+	b := val.([]byte)
+	w.Write(b)
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
@@ -117,14 +134,18 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleBroadcast(broadcast <-chan any) {
+func (s *Server) handleBroadcast() {
 	for {
-		msg := <-broadcast
-		b, err := json.Marshal(msg)
+		msg := <-s.broadcast
+		s.data[time.Now().UTC()] = msg
+		b, err := json.Marshal(s.data)
 		if err != nil {
 			log.Printf("Error encoding JSON: %v", err)
-			return
+			continue
 		}
+
+		s.dataSer.Store(b)
+
 		for client := range s.clients {
 			err := client.conn.WriteMessage(websocket.TextMessage, b)
 			if err != nil {

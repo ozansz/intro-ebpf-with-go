@@ -15,6 +15,8 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+
+	"go.sazak.io/intro-ebpf/0x03-packet-count/server"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go ebpf xdp.c
@@ -99,11 +101,11 @@ func main() {
 	log.Printf("Attached XDP program to iface %q (index %d)", iface.Name, iface.Index)
 	log.Printf("Press Ctrl-C to exit and remove the program")
 
-	// srv, err := server.New(server.WithPort(*serverPort))
-	// if err != nil {
-	// 	log.Fatalf("creating server: %s", err)
-	// }
-	// dataCh := srv.Start()
+	srv, err := server.New(server.WithPort(*serverPort))
+	if err != nil {
+		log.Fatalf("creating server: %s", err)
+	}
+	srv.Start()
 
 	// Print the contents of the BPF hash map (source IP address -> packet count).
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -122,7 +124,7 @@ func main() {
 				continue
 			}
 			log.Printf("Map contents:\n%s", m)
-			// dataCh <- m
+			srv.Submit(m)
 		}
 	}
 }

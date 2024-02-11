@@ -75,8 +75,9 @@ static __always_inline int parse_ip_packet(struct xdp_md *ctx, u64 *ip_metadata)
 SEC("xdp")
 int xdp_prog_func(struct xdp_md *ctx) {
 	u64 ip_meta;
-	if (!parse_ip_packet(ctx, &ip_meta)) {
-		// Not an IPv4 packet or not TCP/UDP, so don't count it.
+	int retval = parse_ip_packet(ctx, &ip_meta);
+	
+	if (retval != PARSED_TCP_PACKET) {
 		return XDP_PASS;
 	}
 
