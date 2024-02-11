@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-Time Leaderboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #leaderboard { margin-top: 20px; }
+        .entry { margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <h2>Real-Time Leaderboard</h2>
+    <div id="leaderboard"></div>
+
+    <script>
+        var conn = new WebSocket('ws://localhost:{{.}}/ws');
+
+        conn.onopen = function(e) {
+            console.log("Connection established!");
+        };
+
+        conn.onmessage = function(e) {
+            var leaderboard = JSON.parse(e.data);
+            updateLeaderboard(leaderboard);
+        };
+
+        function updateLeaderboard(leaderboard) {
+            var leaderboardDiv = document.getElementById('leaderboard');
+            leaderboardDiv.innerHTML = ''; // Clear current leaderboard
+
+            for (var player in leaderboard) {
+                if (leaderboard.hasOwnProperty(player)) {
+                    var entry = document.createElement('div');
+                    entry.classList.add('entry');
+                    entry.textContent = player + ': ' + leaderboard[player];
+                    leaderboardDiv.appendChild(entry);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
